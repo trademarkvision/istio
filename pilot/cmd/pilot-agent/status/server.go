@@ -29,6 +29,8 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"istio.io/istio/pilot/pkg/model"
 
 	"istio.io/istio/pilot/cmd/pilot-agent/status/ready"
@@ -135,6 +137,10 @@ func (s *Server) Run(ctx context.Context) {
 	mux.HandleFunc(quitPath, s.handleQuit)
 	mux.HandleFunc("/app-health/", s.handleAppProbe)
 
+	// Allow H2C (HTTP/2 without TLS)
+	h2s := &http2.Server{}
+	h2c_mux := h2c.NewHandler(mux, h2s)
+
 	l, err := net.Listen("tcp", fmt.Sprintf(":%d", s.statusPort))
 	if err != nil {
 		log.Errorf("Error listening on status port: %v", err.Error())
@@ -151,7 +157,7 @@ func (s *Server) Run(ctx context.Context) {
 	defer l.Close()
 
 	go func() {
-		if err := http.Serve(l, mux); err != nil {
+		if err := http.Serve(l, h2c_mux); err != nil {
 			log.Errora(err)
 			// If the server errors then pilot-agent can never pass readiness or liveness probes
 			// Therefore, trigger graceful termination by sending SIGTERM to the binary pid
