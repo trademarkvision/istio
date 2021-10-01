@@ -38,6 +38,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/expfmt"
 	"go.opencensus.io/stats/view"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
 	"istio.io/istio/pilot/cmd/pilot-agent/metrics"
@@ -214,6 +216,10 @@ func (s *Server) Run(ctx context.Context) {
 	mux.HandleFunc("/debug/pprof/symbol", s.handlePprofSymbol)
 	mux.HandleFunc("/debug/pprof/trace", s.handlePprofTrace)
 
+	// Allow H2C (HTTP/2 without TLS)
+	h2s := &http2.Server{}
+	h2c_mux := h2c.NewHandler(mux, h2s)
+
 	l, err := net.Listen("tcp", fmt.Sprintf(":%d", s.statusPort))
 	if err != nil {
 		log.Errorf("Error listening on status port: %v", err.Error())
@@ -230,7 +236,7 @@ func (s *Server) Run(ctx context.Context) {
 	defer l.Close()
 
 	go func() {
-		if err := http.Serve(l, mux); err != nil {
+		if err := http.Serve(l, h2c_mux); err != nil {
 			log.Error(err)
 			select {
 			case <-ctx.Done():
